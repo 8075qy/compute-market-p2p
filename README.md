@@ -16,6 +16,9 @@
 - **多卡节点与整机调度**：支持单卡 / 多卡节点，按总显存匹配
 - **反作弊**：结果哈希证明、采样复核、算力谎报容差校验、节点防多开 / 防女巫
 - **哈希链审计日志**：不可篡改，关键写操作留痕
+- **首次部署强制初始化管理员**：未设置管理员前，除初始化接口外所有接口返回 403，前端强制跳转初始化页
+- **极简注册**：普通用户仅需用户名 + 密码即可注册，无手机号 / 验证码门槛
+- **管理端用户管理**：用户检索、筛选、封禁 / 解封（带原因、写审计日志），禁止封禁自己与其他管理员
 - **移动端优先**：H5 同时兼容浏览器 / Android / iOS
 
 ## 🧩 核心概念
@@ -24,7 +27,7 @@
 |---|---|
 | 供给方 `supplier` | 贡献闲置 GPU 算力，按算力时长结算收益 |
 | 需求方 `demander` | 发布推理 / 训练 / 批处理任务，按量消费积分 |
-| 管理员 `admin` | 平台治理、配置、审计 |
+| 管理员 `admin` | 平台治理、配置、审计、用户管理 |
 | 自由分 `balance_points` | 可自由使用的积分余额 |
 | 储备分 `reserve_points` | 结算时锁定进公共池，用于互助排队与利息分配 |
 | 冻结分 `frozen_points` | 发布任务时预授权的预算额度 |
@@ -45,11 +48,15 @@
 
 ```
 ComputeMarketP2P/
-├── backend/      # FastAPI 控制面（API / 服务 / 模型 / 迁移 / 定时任务）
-├── frontend/     # Vue 3 移动端 H5（浏览器 / Android / iOS）
-├── agent/        # 算力节点代理（部署在供给方机器）
-├── docs/         # 需求 / 架构 / API / 流程 / 反作弊 / 部署文档
-└── docker-compose.yml  # 本地开发环境编排
+├── backend/                 # FastAPI 控制面（API / 服务 / 模型 / 迁移 / 定时任务）
+│   ├── app/api/v1/          # 路由：auth / supplier / demand / settlements / account / admin
+│   ├── app/services/        # 业务逻辑：auth / account / node / task / settlement / scheduler / audit / admin
+│   ├── app/models/          # SQLAlchemy 模型（集中定义）
+│   └── alembic/versions/    # 数据库迁移脚本
+├── frontend/                # Vue 3 移动端 H5（浏览器 / Android / iOS）
+├── agent/                   # 算力节点代理（部署在供给方机器）
+├── docker-compose.yml       # 容器编排（PostgreSQL / Redis / MinIO / 后端 / 前端）
+└── docker-compose.override.yml  # 本地端口覆盖（避免与宿主机中间件冲突）
 ```
 
 ## 🚀 快速开始
@@ -57,7 +64,7 @@ ComputeMarketP2P/
 ### 前置要求
 
 - Python 3.11+
-- Node.js 18+（前端）
+- Node.js 18+
 - Docker & Docker Compose（可选，用于一键拉起依赖）
 
 ### 方式一：Docker Compose（推荐）
@@ -67,6 +74,12 @@ docker compose up -d
 ```
 
 一键启动 PostgreSQL、Redis、MinIO、后端（`:8000`）与前端（`:5173`）。数据表在服务启动时自动创建，并预置 GPU 规格库。
+
+启动后首次访问前端 http://localhost:5173 会**自动跳转管理员初始化页**，设置管理员用户名与密码后系统方可使用。
+
+> **端口覆盖**：若宿主机已用 Homebrew 启动 PostgreSQL / Redis / MinIO，`docker-compose.override.yml` 会把宿主机端口改为 `5433`（PostgreSQL）、`6378`（Redis）、`9002` / `9003`（MinIO API / Console），避免端口冲突。
+
+> **数据持久化**：数据库与对象存储数据存放在命名卷 `pgdata` / `minio_data`。`docker compose down` 保留数据；**只有** `docker compose down -v` 会删除卷并清空数据。
 
 ### 方式二：本地手动启动
 
@@ -107,6 +120,32 @@ pip install -r requirements.txt
 python agent.py
 ```
 
+## 🔐 账号与初始化
+
+| 场景 | 接口 | 说明 |
+|---|---|---|
+| 查询是否需要初始化 | `GET /api/v1/auth/setup-status` | 返回 `{"need_setup": true/false}`，无管理员时为 `true` |
+| 首次初始化管理员 | `POST /api/v1/auth/setup` | 仅在系统无管理员时可用，成功后直接返回登录令牌 |
+| 普通用户注册 | `POST /api/v1/auth/register` | 仅需 `username` + `password`（可选 `nickname`） |
+| 登录 | `POST /api/v1/auth/login` | `contact` 支持用户名 / 手机号 / 邮箱 |
+
+> 未完成管理员初始化前，后端全局拦截除 `setup-status`、`setup` 之外的所有请求（返回 403）。
+
+## 👤 管理端功能
+
+管理端页面统一在 `/admin` 下，仅 `admin` 角色可访问：
+
+| 模块 | 路由 | 能力 |
+|---|---|---|
+| 仪表盘 | `/admin` | 平台概览（在线节点、待调度任务、今日抽成、抽成比例） |
+| 节点管理 | `/admin/nodes` | 查看节点、强制下线 |
+| 任务管理 | `/admin/tasks` | 查看任务、取消调度 |
+| 用户管理 | `/admin/users` | 关键词搜索（用户名 / 手机号 / 邮箱 / 昵称）、角色与状态筛选、封禁 / 解封（必填原因、写审计日志） |
+| 审计日志 | `/admin/audit` | 查询日志、校验哈希链完整性 |
+| 平台配置 | `/admin/config` | 抽成比例、结算单位、重试 / 超时阈值、储备治理参数 |
+
+**用户管理安全约束**：不能封禁自己，不能封禁其他管理员；封禁后该用户的登录与接口访问都会被拒绝；手机号展示脱敏（仅保留前 3 后 4）。
+
 ## ⚙️ 环境变量
 
 关键环境变量（完整模板见 `backend/.env.example`）：
@@ -123,7 +162,7 @@ python agent.py
 
 ## 🧪 测试与检查
 
-后端：
+后端（项目统一使用 conda 环境 `GPUSharingP2`，可先 `conda activate GPUSharingP2`）：
 
 ```bash
 cd backend
@@ -139,10 +178,6 @@ cd frontend
 npm run build                # vue-tsc 类型检查 + 构建
 npm run test:unit            # 单元测试
 ```
-
-## 📚 文档
-
-完整需求、架构、API、业务流程、反作弊与部署方案见 [`docs/`](docs/README.md)。
 
 ## 许可证
 
