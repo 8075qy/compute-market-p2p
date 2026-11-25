@@ -1,0 +1,15 @@
+# 本地开发端口映射覆盖：避免与本机 Homebrew 启动的 PostgreSQL / Redis / MinIO 冲突
+# 仅改变宿主机暴露端口，容器内部服务端口与网络保持不变
+# 注意：ports 是列表字段，Compose 默认合并行为是「追加」，因此必须用 !override 标签整体替换，
+# 否则 base 文件里的 5432/6379/9000/9001 仍会被同时绑定，与本机 Homebrew 服务冲突。
+services:
+  postgres:
+    ports: !override
+      - "5433:5432"
+  redis:
+    ports: !override
+      - "6378:6379"
+  minio:
+    ports: !override
+      - "9002:9000"
+      - "9003:9001"

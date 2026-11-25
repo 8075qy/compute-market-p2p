@@ -1,0 +1,26 @@
+{
+  "include": ["backend", "agent"],
+  "exclude": [
+    "frontend",
+    "logs",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv",
+    "**/venv",
+    "**/.mypy_cache",
+    "**/.ruff_cache",
+    "**/.pytest_cache",
+    "**/dist"
+  ],
+  "extraPaths": [
+    "/Users/mr.yang/Documents/PyProjectAI/backend",
+    "/Users/mr.yang/Documents/PyProjectAI/agent"
+  ],
+  "venvPath": "/opt/homebrew/Caskroom/miniconda/base/envs",
+  "venv": "GPUSharingP2",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true,
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none"
+}
